@@ -1,23 +1,38 @@
-name: Warde Stock Sync
+name: Fabric Stock Sync
 
+# you can also trigger manually via “Run workflow”
 on:
   schedule:
-    # every 30 minutes
-    - cron: '*/30 * * * *'
+    # every 5 minutes
+    - cron:  '*/5 * * * *'
   workflow_dispatch:
 
 jobs:
-  scrape:
+  sync-stock:
     runs-on: ubuntu-latest
+
     steps:
+      # 1) grab your code
       - uses: actions/checkout@v3
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
+
+      # 2) if you need Node / npm, install here:
+      - name: Set up Node.js
+        uses: actions/setup-node@v3
         with:
           node-version: '18'
+
       - name: Install dependencies
-        run: npm install puppeteer node-fetch form-data
-      - name: Run scraper
-        run: node sync.js
+        run: npm ci
+
+      # 3) run your scraper/sync
+      - name: Run stock sync
         env:
-          CI: true
+          # point to your WP site (optional, if you need it in your script)
+          WP_SITE: ${{ secrets.WP_SITE }}
+          # your WP username
+          WP_USER: ${{ secrets.WP_USER }}
+          # the application‑password you created in WP
+          WP_PASS: ${{ secrets.WP_PASS }}
+        run: |
+          # calls your sync script which should read process.env.WP_* 
+          node sync.js
