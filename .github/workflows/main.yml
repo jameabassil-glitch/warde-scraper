@@ -1,31 +1,30 @@
+# .github/workflows/sync.yml
 name: Fabric Stock Sync
 
-# trigger manually or once an hour
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'   # every hour on the hour
+    - cron: '0 * * * *'
 
 jobs:
   sync-stock:
     runs-on: ubuntu-latest
-
     steps:
-      # 1) grab your code
-      - name: Checkout repository
-        uses: actions/checkout@v3
+      - uses: actions/checkout@v3
 
-      # 2) install Node
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      # 3) install your dependencies (package.json → node_modules)
-      - name: Install dependencies
-        run: npm install
+      # bootstrap npm package.json
+      - name: Init npm
+        run: npm init -y
 
-      # 4) actually run the scraper
+      # install only the drivers your sync.js requires
+      - name: Install dependencies
+        run: npm install axios jsdom
+
       - name: Run stock sync
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
