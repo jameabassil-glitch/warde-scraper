@@ -1,35 +1,31 @@
-# .github/workflows/sync.yml
 name: Fabric Stock Sync
 
-# manually or every 5 minutes
+# run every 5 minutes + manual dispatch
 on:
-  workflow_dispatch:
   schedule:
     - cron: '*/5 * * * *'
+  workflow_dispatch:
 
 jobs:
   sync-stock:
     runs-on: ubuntu-latest
-
     steps:
-      # 1) Grab your code
-      - uses: actions/checkout@v3
+      - name: Checkout code
+        uses: actions/checkout@v3
 
-      # 2) Set up Node 18
       - name: Set up Node.js
         uses: actions/setup-node@v3
         with:
           node-version: '18'
 
-      # 3) Bootstrap npm (creates package.json)
-      - name: Init npm
-        run: npm init -y
+      - name: Init npm & mark CommonJS
+        run: |
+          npm init -y
+          # no "type=module" so we stay CommonJS
 
-      # 4) Install the modules your sync.js requires
       - name: Install dependencies
-        run: npm install puppeteer node-fetch jsdom axios
+        run: npm install puppeteer node-fetch axios
 
-      # 5) Run the scraper, passing in your WP creds
       - name: Run stock sync
         env:
           WP_SITE: ${{ secrets.WP_SITE }}
