@@ -4,7 +4,7 @@ name: Fabric Stock Sync
 on:
   workflow_dispatch:
   schedule:
-    - cron: '0 * * * *'
+    - cron: '*/5 * * * *'
 
 jobs:
   sync-stock:
@@ -17,13 +17,11 @@ jobs:
         with:
           node-version: '18'
 
-      # bootstrap npm package.json
       - name: Init npm
         run: npm init -y
 
-      # install only the drivers your sync.js requires
       - name: Install dependencies
-        run: npm install axios jsdom
+        run: npm install puppeteer axios jsdom
 
       - name: Run stock sync
         env:
