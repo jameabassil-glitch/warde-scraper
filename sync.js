@@ -1,49 +1,99 @@
-const puppeteer = require('puppeteer');
-const fetch     = require('node-fetch');
-const FormData  = require('form-data');
+#!/usr/bin/env node
+// sync.js
+//
+// 1) dynamic‐import node‑fetch so we don't blow up on ESM
+const fetch = (...args) =>
+  import('node-fetch').then(mod => mod.default(...args));
 
-// 1) Your WP site + admin creds (use a machine‑user or app password!)
-// At the top of sync.js
+const puppeteer = require('puppeteer');
+const axios     = require('axios');
+
+// these three come from your workflow/env secrets:
 const WP_SITE = process.env.WP_SITE;
 const WP_USER = process.env.WP_USER;
 const WP_PASS = process.env.WP_PASS;
 
-const AUTH    = 'Basic ' + Buffer.from(`${WP_USER}:${WP_PASS}`).toString('base64');
+// Basic auth for WooCommerce REST:
+const wcAuth = { username: WP_USER, password: WP_PASS };
 
-// 2) Map Woo product IDs → Warde URLs
-const fabrics = [
-  { wooId: 4232, wardeUrl: 'https://warde.com/products/246047' },
-  // ...add more here...
-];
+async function getFabricProducts() {
+  // adjust the category ID or slug as needed for your “fabric” term
+  // this uses the WC REST endpoint: /wp-json/wc/v3/products?category=<fabric_id>
+  const res = await axios.get(
+    `${WP_SITE.replace(/\/$/,'')}/wp-json/wc/v3/products`,
+    {
+      auth: wcAuth,
+      params: {
+        category: 'fabric', // or numeric term_id
+        per_page: 100
+      }
+    }
+  );
+  return res.data; // array of product objects
+}
+
+async function scrapeStockFromWarde(url) {
+  const browser = await puppeteer.launch({ args: ['--no-sandbox'] });
+  const page    = await browser.newPage();
+  await page.goto(url, { timeout: 30000, waitUntil: 'networkidle2' });
+  // wait for the stock line to appear
+  await page.waitForSelector('li .title', { timeout: 15000 });
+  // grab the list of <li> and find the one whose .title text is “Available Stock”
+  const stock = await page.evaluate(()=>{
+    const items = Array.from(document.querySelectorAll('li'));
+    for (let li of items) {
+      const title = li.querySelector('.title');
+      const value = li.querySelector('.value');
+      if (title && /Available\s+Stock/i.test(title.textContent||'')) {
+        // value.textContent might include extra stuff like “73 Meters”
+        const m = (value.textContent||'').match(/(\d+)/);
+        if (m) return parseInt(m[1],10);
+      }
+    }
+    return null;
+  });
+  await browser.close();
+  return stock;
+}
+
+async function updateWooStock(productId, qty) {
+  await axios.put(
+    `${WP_SITE.replace(/\/$/,'')}/wp-json/wc/v3/products/${productId}`,
+    { stock_quantity: qty, manage_stock: true },
+    { auth: wcAuth }
+  );
+}
 
 (async()=>{
-  const browser = await puppeteer.launch({args:['--no-sandbox']});
-  const page    = await browser.newPage();
-  await page.setUserAgent('Mozilla/5.0');
-
-  for(const f of fabrics){
-    console.log(`🔍 Fetching ${f.wardeUrl}`);
-    await page.goto(f.wardeUrl, { waitUntil: 'networkidle2' });
-
-    // Scrape the “Available Stock” value:
-    const raw = await page.$eval(
-      'li span.title:contains("Available Stock") + span.value',
-      el => el.textContent
-    ).catch(()=>null);
-    const qty = raw && raw.match(/\d+/) ? parseInt(raw.match(/\d+/)[0],10) : 0;
-    console.log(`  → qty=${qty}`);
-
-    // POST back to WP
-    const form = new FormData();
-    form.append('product_id', f.wooId);
-    form.append('qty', qty);
-    const resp = await fetch(`${WP_SITE}/wp-json/warde-sync/v1/stock`, {
-      method: 'POST',
-      headers: { 'Authorization': AUTH },
-      body: form
-    });
-    console.log('  → WP response:', await resp.json());
+  console.log('=== Fabric sync started ===');
+  const fabrics = await getFabricProducts();
+  console.log(`Found ${fabrics.length} fabrics`);
+  for (let p of fabrics) {
+    const pid = p.id;
+    const url = p.meta_data.find(m=>m.key==='warde_url')?.value;
+    if (!url) {
+      console.warn(` • [${pid}] no warde_url meta → skipping`);
+      continue;
+    }
+    console.log(` • [${pid}] scraping ${url}`);
+    let newQty = null;
+    try {
+      newQty = await scrapeStockFromWarde(url);
+    } catch(err) {
+      console.error(`   → error scraping: ${err.message}`);
+      continue;
+    }
+    if (newQty===null) {
+      console.warn(`   → couldn’t parse stock, skipping`);
+      continue;
+    }
+    console.log(`   → got stock = ${newQty}, updating WooCommerce…`);
+    try {
+      await updateWooStock(pid, newQty);
+      console.log(`   ✓ stock updated`);
+    } catch(err) {
+      console.error(`   → update failed: ${err.response?.data||err.message}`);
+    }
   }
-
-  await browser.close();
+  console.log('=== Fabric sync finished ===');
 })();
