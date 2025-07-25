@@ -3,9 +3,11 @@ const fetch     = require('node-fetch');
 const FormData  = require('form-data');
 
 // 1) Your WP site + admin creds (use a machine‑user or app password!)
-const WP_SITE = 'https://your‑site.com';
-const WP_USER = 'admin_username';
-const WP_PASS = 'admin_password';
+// At the top of sync.js
+const WP_SITE = process.env.WP_SITE;
+const WP_USER = process.env.WP_USER;
+const WP_PASS = process.env.WP_PASS;
+
 const AUTH    = 'Basic ' + Buffer.from(`${WP_USER}:${WP_PASS}`).toString('base64');
 
 // 2) Map Woo product IDs → Warde URLs
